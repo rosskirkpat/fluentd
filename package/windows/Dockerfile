@@ -1,29 +1,30 @@
 ARG SERVERCORE_VERSION
-
 FROM mcr.microsoft.com/windows/servercore:${SERVERCORE_VERSION}
 
-SHELL ["powershell", "-NoLogo", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+# Download base ruby with devkit
+RUN powershell -NoLogo -Command $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue' ; \
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+    Invoke-WebRequest https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-2.7.3-1/rubyinstaller-devkit-2.7.3-1-x64.exe -Outfile rubyinstaller.exe
 
-RUN Set-ExecutionPolicy Bypass -Scope Process -Force; \
-    iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+# Install base ruby and initialize devkit
+RUN (cmd /c rubyinstaller.exe /verysilent /log=install.log) || (powershell get-content c:/install.log)
+RUN powershell -NoLogo -Command $ErrorActionPreference = 'Stop'; $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine'); \
+    powershell -NoLogo -Command $ErrorActionPreference = 'Stop'; $env:RUBYOPT = [Environment]::GetEnvironmentVariable('RUBYOPT','Machine')
+RUN ruby --version
+RUN ridk install 1
 
-RUN choco install -y ruby --version 2.4.2.2 --params "'/InstallDir:C:\'"; \
-    choco install -y msys2 --params "'/NoPath /NoUpdate /InstallDir:C:\ruby24\msys64'"
+RUN ridk enable
 
 COPY Gemfile 'C:\fluentd\install\Gemfile'
 COPY Gemfile.lock 'C:\fluentd\install\Gemfile.lock'
-
-RUN refreshenv; \
-ridk install 2 3; \
-'gem: --no-document' | Out-File -Encoding UTF8 -NoNewline -Force -FilePath 'C:\ProgramData\gemrc'; \
-gem install bundler; \
-bundle config build.certstore_c --with-cflags="-Wno-attributes"; \
-bundle config build.yajl-ruby --with-cflags="-Wno-attributes"; \
-bundle config build.oj --with-cflags="-Wno-attributes"; \
-bundle install --gemfile='C:\fluentd\install\Gemfile'; \
-gem sources --clear-all; \
-Remove-Item -Force C:\ruby24\lib\ruby\gems\2.4.0\cache\*.gem; \
-Remove-Item -Recurse -Force C:\ProgramData\chocolatey
+RUN powershell -Command $ErrorActionPreference = 'Stop' ; "[IO.File]::WriteAllLines('C:\ProgramData\gemrc', 'gem: --no-document')"
+RUN gem install bundler --no-doc
+RUN bundle config build.certstore_c --with-cflags="-Wno-attributes"
+RUN bundle config build.yajl-ruby --with-cflags="-Wno-attributes"
+RUN bundle config build.oj --with-cflags="-Wno-attributes"
+RUN bundle install --gemfile='C:\fluentd\install\Gemfile'
+RUN gem sources --clear-all
+RUN powershell -NoLogo -Command $ErrorActionPreference = 'SilentlyContinue'; Remove-Item -Force C:\Ruby27-x64\lib\ruby\gems\2.7.0\cache\*.gem
 
 COPY upgrade-gems.ps1 'C:\fluentd\install\upgrade-gems.ps1'
 COPY fluent.conf 'C:\etc\fluent\fluent.conf'

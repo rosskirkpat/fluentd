@@ -10,20 +10,28 @@ RUN powershell -NoLogo -Command $ErrorActionPreference = 'Stop'; $ProgressPrefer
 RUN (cmd /c rubyinstaller.exe /verysilent /log=install.log) || (powershell get-content c:/install.log)
 RUN powershell -NoLogo -Command $ErrorActionPreference = 'Stop'; $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine'); \
     powershell -NoLogo -Command $ErrorActionPreference = 'Stop'; $env:RUBYOPT = [Environment]::GetEnvironmentVariable('RUBYOPT','Machine')
-RUN ruby --version
-RUN ridk install 1
 
-RUN ridk enable
 
+# configure PATH for ruby and msys2
+RUN ruby --version; \
+    ridk install 1; \
+    ridk enable
+
+# setup gemfile and gemrc files
 COPY Gemfile 'C:\fluentd\install\Gemfile'
 COPY Gemfile.lock 'C:\fluentd\install\Gemfile.lock'
-RUN powershell -Command $ErrorActionPreference = 'Stop' ; "[IO.File]::WriteAllLines('C:\ProgramData\gemrc', 'gem: --no-document')"
-RUN gem install bundler --no-doc
-RUN bundle config build.certstore_c --with-cflags="-Wno-attributes"
-RUN bundle config build.yajl-ruby --with-cflags="-Wno-attributes"
-RUN bundle config build.oj --with-cflags="-Wno-attributes"
-RUN bundle install --gemfile='C:\fluentd\install\Gemfile'
-RUN gem sources --clear-all
+
+# install gem bundler and configure bundles
+RUN powershell -Command $ErrorActionPreference = 'Stop'; \
+    "[IO.File]::WriteAllLines('C:\ProgramData\gemrc', 'gem: --no-document')"; \
+    gem install bundler --no-doc; \
+    bundle config build.certstore_c --with-cflags="-Wno-attributes"; \
+    bundle config build.yajl-ruby --with-cflags="-Wno-attributes"; \
+    bundle config build.oj --with-cflags="-Wno-attributes"; \
+    bundle install --gemfile='C:\fluentd\install\Gemfile'; \
+    gem sources --clear-all
+
+# cleanup
 RUN powershell -NoLogo -Command $ErrorActionPreference = 'SilentlyContinue'; Remove-Item -Force C:\Ruby27-x64\lib\ruby\gems\2.7.0\cache\*.gem
 
 COPY upgrade-gems.ps1 'C:\fluentd\install\upgrade-gems.ps1'
